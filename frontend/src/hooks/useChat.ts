@@ -16,7 +16,16 @@ export function useChat() {
   });
 
   const sendMutation = useMutation({
-    mutationFn: chatApi.send,
+    mutationFn: async (payload: { message: string; session_id?: string; files?: File[] }) => {
+      if (payload.files?.length) {
+        return chatApi.sendWithFiles(
+          payload.message,
+          payload.session_id ?? sessionId ?? undefined,
+          payload.files
+        );
+      }
+      return chatApi.send({ message: payload.message, session_id: payload.session_id });
+    },
     onSuccess: (response) => {
       if (response.session_id) {
         setSessionId(response.session_id);
@@ -38,7 +47,7 @@ export function useChat() {
   });
 
   const sendMessage = useCallback(
-    (content: string) => {
+    (content: string, files?: File[]) => {
       const userMessage: Message = {
         id: crypto.randomUUID(),
         role: "user",
@@ -46,7 +55,11 @@ export function useChat() {
         timestamp: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, userMessage]);
-      sendMutation.mutate({ message: content, session_id: sessionId ?? undefined });
+      sendMutation.mutate({
+        message: content,
+        session_id: sessionId ?? undefined,
+        files: files?.length ? files : undefined,
+      });
     },
     [sessionId, sendMutation]
   );

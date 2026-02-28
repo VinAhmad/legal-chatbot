@@ -6,7 +6,11 @@ import logging
 import httpx
 
 from app.core.config import settings
-from app.core.response_templates import SYSTEM_PROMPT_TEMPLATE
+from app.core.response_templates import (
+    SYSTEM_PROMPT_TEMPLATE,
+    GENERAL_PROMPT_TEMPLATE,
+    get_static_knowledge,
+)
 from app.services.embedding_service import EmbeddingService
 from app.services.cache_service import CacheService
 from app.services.document_processor import DocumentProcessor
@@ -77,23 +81,26 @@ class RAGEngine:
             return cached
 
         query_embedding = await self.embedding_service.embed_text(question)
-
         search_results = self.vector_store.search(query_embedding, top_k=5)
 
         if not search_results:
-            return {
-                "summary": "Maaf, saya tidak menemukan informasi yang relevan di dokumen yang tersedia. "
-                           "Silakan upload dokumen terlebih dahulu atau coba pertanyaan yang berbeda.",
-                "table": None,
-                "sources": [],
-            }
+            # Tidak ada dokumen relevan: jawab dari pengetahuan umum + static knowledge
+            static_knowledge = get_static_knowledge()
+            prompt = GENERAL_PROMPT_TEMPLATE.format(
+                static_knowledge=static_knowledge or "(Tidak ada.)",
+                question=question,
+            )
+            llm_response = await self._call_ollama(prompt)
+            parsed = self._parse_llm_response(llm_response)
+            parsed["sources"] = []
+            await self.cache_service.set(question, parsed)
+            return parsed
 
+        # Ada dokumen relevan: RAG seperti biasa
         context = self._build_context(search_results)
         prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context, question=question)
-
         llm_response = await self._call_ollama(prompt)
         parsed = self._parse_llm_response(llm_response)
-
         sources = []
         for result in search_results[:3]:
             sources.append({
@@ -102,9 +109,40 @@ class RAGEngine:
                 "chunk_text": result["text"][:200],
             })
         parsed["sources"] = sources
-
         await self.cache_service.set(question, parsed)
+        return parsed
 
+    async def query_with_attached_files(
+        self, question: str, file_paths_with_names: list[tuple[str, str]]
+    ) -> dict:
+        """
+        Jawab pertanyaan berdasarkan file yang dilampirkan di chat (referensi sekali pakai).
+        File tidak disimpan ke knowledge base; hanya dipakai sebagai konteks untuk pertanyaan ini.
+        """
+        self._ensure_initialized()
+        all_chunks = []
+        for file_path, filename in file_paths_with_names:
+            chunks = await DocumentProcessor.process(file_path, filename)
+            for c in chunks:
+                all_chunks.append({"text": c.text, "metadata": c.metadata})
+        if not all_chunks:
+            return {
+                "summary": "Tidak bisa membaca isi file. Pastikan format didukung (PDF, DOCX, CSV, TXT).",
+                "table": None,
+                "sources": [],
+            }
+        context = self._build_context(all_chunks)
+        prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context, question=question)
+        llm_response = await self._call_ollama(prompt)
+        parsed = self._parse_llm_response(llm_response)
+        sources = []
+        for c in all_chunks[:5]:
+            sources.append({
+                "document_name": c["metadata"].get("source", "Unknown"),
+                "page": c["metadata"].get("page"),
+                "chunk_text": (c["text"][:200] + "…") if len(c["text"]) > 200 else c["text"],
+            })
+        parsed["sources"] = sources
         return parsed
 
     async def delete_document(self, filename: str):
@@ -124,6 +162,34 @@ class RAGEngine:
                 f"[Dokumen {i}: {source}, Hal. {page}]\n{result['text']}"
             )
         return "\n\n---\n\n".join(context_parts)
+
+    async def generate_topic_title(self, message: str) -> str:
+        """Buat judul topik singkat (maks 6 kata) dari pesan user untuk ditampilkan di sidebar."""
+        prompt = (
+            "Buatkan judul topik singkat maksimal 6 kata dalam Bahasa Indonesia untuk pesan berikut. "
+            "Hanya jawab judulnya saja, tanpa tanda kutip, tanpa penjelasan.\n\n"
+            f"Pesan: {message}\n\nJudul topik:"
+        )
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.post(
+                    f"{settings.ollama_base_url}/api/generate",
+                    json={
+                        "model": settings.llm_model,
+                        "prompt": prompt,
+                        "stream": False,
+                        "options": {"temperature": 0.5, "num_predict": 30},
+                    },
+                )
+                response.raise_for_status()
+                title = response.json()["response"].strip().strip('"').strip("'")
+                # Batasi panjang biar rapi di sidebar
+                if len(title) > 50:
+                    title = title[:47] + "..."
+                return title or message[:50]
+        except Exception:
+            logger.warning("Gagal generate topic title, pakai fallback")
+            return message[:50] + ("..." if len(message) > 50 else "")
 
     async def _call_ollama(self, prompt: str) -> str:
         """Panggil Ollama LLM API untuk generate jawaban."""

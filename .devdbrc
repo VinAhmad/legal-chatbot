@@ -1,0 +1,6 @@
+[
+  {
+    "type": "sqlite",
+    "path": "c:\\Programming\\intern\\Project Legal\\backend\\data\\chat_history.db"
+  }
+]

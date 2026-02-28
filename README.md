@@ -74,6 +74,23 @@ Buka http://localhost:5173. Request ke `/api` akan di-proxy ke backend (port 800
 
 Format response (summary + table) bisa diubah di `backend/app/core/response_templates.py` tanpa ubah logic. Detail kolom tabel bisa disesuaikan setelah ada template final dari departemen legal.
 
+## Cara Memberi "Ilmu" ke Model
+
+Model punya dua sumber pengetahuan:
+
+1. **Dari dokumen (RAG)**  
+   Upload PDF/DOCX/CSV dll. di sidebar. Isi dokumen di-chunk, di-embed, dan dipakai untuk menjawab pertanyaan yang relevan. Ini sumber utama untuk isi kontrak, peraturan, SOP, dll.
+
+2. **Pertanyaan umum (tanpa dokumen)**  
+   Jika user bertanya sesuatu yang tidak ada di dokumen, model tetap menjawab dari **pengetahuan umum** LLM plus **pengetahuan tetap** di bawah.
+
+3. **Pengetahuan tetap (static knowledge)**  
+   Untuk aturan/FAQ yang ingin selalu diikuti model (tanpa upload dokumen), edit:
+   - **File**: `backend/app/core/static_knowledge.txt` — isi teks (baris yang diawali `#` diabaikan).
+   - **Atau** variabel `STATIC_KNOWLEDGE` di `backend/app/core/response_templates.py`.
+
+   Isi ini di-inject ke prompt saat user bertanya hal yang tidak punya konteks dokumen. Contoh isi: kebijakan internal, disclaimer, atau instruksi tetap.
+
 ## Lisensi
 
 Internal use — departemen legal.

@@ -40,6 +40,23 @@ export const chatApi = {
     return data;
   },
 
+  /** Kirim pesan dengan file lampiran (referensi sekali pakai, tidak masuk knowledge base). */
+  sendWithFiles: async (
+    message: string,
+    sessionId: string | null | undefined,
+    files: File[]
+  ): Promise<ChatResponse> => {
+    const form = new FormData();
+    form.append("message", message);
+    if (sessionId) form.append("session_id", sessionId);
+    for (const f of files) form.append("files", f);
+    const { data } = await api.post<ChatResponse>("/chat/with-files", form, {
+      headers: { "Content-Type": "multipart/form-data" },
+      timeout: 120_000,
+    });
+    return data;
+  },
+
   getSessions: async (): Promise<ChatSession[]> => {
     const { data } = await api.get<ChatSession[]>("/chat/sessions");
     return data;
