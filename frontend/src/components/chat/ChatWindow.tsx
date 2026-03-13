@@ -137,7 +137,7 @@ export default function ChatWindow({ messages, isLoading, onSend }: ChatWindowPr
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-4 py-6 relative z-10 scroll-smooth"
+        className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-6 relative z-10 scroll-smooth"
       >
         <AnimatePresence mode="wait">
           {messages.length === 0 ? (

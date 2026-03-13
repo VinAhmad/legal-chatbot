@@ -1,8 +1,8 @@
-import { useRef } from "react";
-import { motion, useInView } from "framer-motion";
+import { useRef, useState, useEffect } from "react";
+import { motion, useInView, AnimatePresence } from "framer-motion";
 import type { Message } from "@/types";
-import { User, Scale, Copy, Check } from "lucide-react";
-import { useState } from "react";
+import { User, Scale, Copy, Check, Download, FileText, FileDown } from "lucide-react";
+import { chatApi } from "@/services/api";
 import SummaryResponse from "./SummaryResponse";
 
 interface MessageBubbleProps {
@@ -15,6 +15,8 @@ export default function MessageBubble({ message, index = 0 }: MessageBubbleProps
   const ref = useRef<HTMLDivElement>(null);
   const isInView = useInView(ref, { once: true, margin: "-40px" });
   const [copied, setCopied] = useState(false);
+  const [showExport, setShowExport] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const time = message.timestamp
     ? new Date(message.timestamp).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
@@ -25,6 +27,26 @@ export default function MessageBubble({ message, index = 0 }: MessageBubbleProps
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const handleExport = async (format: "docx" | "pdf") => {
+    setExporting(true);
+    try {
+      await chatApi.exportMessage(message.id, format);
+    } catch {
+      // Silently fail
+    } finally {
+      setExporting(false);
+      setShowExport(false);
+    }
+  };
+
+  // Tutup dropdown export kalau klik di luar
+  useEffect(() => {
+    if (!showExport) return;
+    const close = () => setShowExport(false);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [showExport]);
 
   return (
     <motion.div
@@ -60,7 +82,7 @@ export default function MessageBubble({ message, index = 0 }: MessageBubbleProps
         </motion.div>
       )}
 
-      <div className={`flex flex-col ${isUser ? "items-end" : "items-start"} max-w-[75%]`}>
+      <div className={`flex flex-col ${isUser ? "items-end" : "items-start"} max-w-[75%] min-w-0`}>
         {/* Label nama */}
         <motion.span
           initial={{ opacity: 0, x: isUser ? 10 : -10 }}
@@ -74,7 +96,7 @@ export default function MessageBubble({ message, index = 0 }: MessageBubbleProps
         <motion.div
           whileHover={{ scale: 1.005 }}
           transition={{ type: "spring", stiffness: 400, damping: 30 }}
-          className={`relative rounded-2xl px-4 py-3 ${
+          className={`relative rounded-2xl px-4 py-3 overflow-hidden break-words ${
             isUser
               ? "bg-gradient-to-br from-blue-600 to-indigo-600 text-white rounded-tr-md shadow-lg shadow-blue-500/20"
               : "bg-white/95 backdrop-blur-sm border border-gray-200/70 text-gray-900 rounded-tl-md shadow-md shadow-gray-200/50"
@@ -103,21 +125,82 @@ export default function MessageBubble({ message, index = 0 }: MessageBubbleProps
             )}
           </div>
 
-          {/* Tombol copy — muncul saat hover */}
-          {!isUser && (
+        </motion.div>
+
+        {/* Action toolbar — di bawah bubble, muncul saat hover */}
+        {!isUser && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="flex items-center gap-1 mt-1.5 px-1 opacity-0 group-hover/msg:opacity-100 transition-opacity duration-200"
+          >
+            {/* Copy */}
             <motion.button
               type="button"
               onClick={handleCopy}
-              initial={{ opacity: 0, scale: 0.8 }}
-              whileHover={{ scale: 1.15 }}
+              whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
-              className="absolute -top-2 -right-2 w-7 h-7 rounded-lg bg-white border border-gray-200 shadow-md flex items-center justify-center text-gray-400 hover:text-blue-600 opacity-0 group-hover/msg:opacity-100 transition-opacity"
+              className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
               title="Salin jawaban"
             >
-              {copied ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
+              {copied ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
+              <span>{copied ? "Tersalin" : "Salin"}</span>
             </motion.button>
-          )}
-        </motion.div>
+
+            {/* Divider */}
+            <div className="w-px h-3.5 bg-gray-200" />
+
+            {/* Export dropdown */}
+            <div className="relative">
+              <motion.button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setShowExport(!showExport); }}
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                title="Export jawaban"
+                disabled={exporting}
+              >
+                {exporting ? (
+                  <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>
+                    <Download size={12} />
+                  </motion.div>
+                ) : (
+                  <Download size={12} />
+                )}
+                <span>Export</span>
+              </motion.button>
+
+              <AnimatePresence>
+                {showExport && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9, y: -4 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.9, y: -4 }}
+                    className="absolute bottom-full left-0 mb-1.5 bg-white rounded-lg border border-gray-200 shadow-xl overflow-hidden z-20"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleExport("docx")}
+                      className="flex items-center gap-2 px-3 py-2 text-xs text-gray-600 hover:bg-blue-50 hover:text-blue-700 w-full whitespace-nowrap"
+                    >
+                      <FileText size={14} className="text-blue-500" />
+                      Export DOCX
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleExport("pdf")}
+                      className="flex items-center gap-2 px-3 py-2 text-xs text-gray-600 hover:bg-red-50 hover:text-red-700 w-full whitespace-nowrap"
+                    >
+                      <FileDown size={14} className="text-red-500" />
+                      Export PDF
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </motion.div>
+        )}
 
         {time && (
           <motion.span

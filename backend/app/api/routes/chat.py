@@ -1,8 +1,10 @@
 import httpx
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import Response
 from app.models.schemas import ChatRequest, ChatResponse, ChatSessionResponse, MessageResponse
 from app.api.deps import get_chat_service
 from app.services.chat_service import ChatService
+from app.services.export_service import export_to_docx, export_to_pdf
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
@@ -80,6 +82,38 @@ async def get_session_messages(
 ):
     """Ambil semua messages dari session tertentu."""
     return await chat_service.get_messages(session_id)
+
+
+@router.get("/messages/{message_id}/export")
+async def export_message(
+    message_id: str,
+    format: str = Query("docx", regex="^(docx|pdf)$"),
+    chat_service: ChatService = Depends(get_chat_service),
+):
+    """Export jawaban chatbot ke DOCX atau PDF."""
+    msg = await chat_service.db.get_message_by_id(message_id)
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message tidak ditemukan.")
+    if msg["role"] != "assistant":
+        raise HTTPException(status_code=400, detail="Hanya jawaban assistant yang bisa diexport.")
+
+    content = msg["content"]
+    sources = msg.get("sources", [])
+
+    if format == "pdf":
+        file_bytes = export_to_pdf(content, sources)
+        media_type = "application/pdf"
+        filename = f"analisis_{message_id[:8]}.pdf"
+    else:
+        file_bytes = export_to_docx(content, sources)
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        filename = f"analisis_{message_id[:8]}.docx"
+
+    return Response(
+        content=file_bytes,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.delete("/sessions/{session_id}")

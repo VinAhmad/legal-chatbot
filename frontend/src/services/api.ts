@@ -70,6 +70,23 @@ export const chatApi = {
   deleteSession: async (sessionId: string): Promise<void> => {
     await api.delete(`/chat/sessions/${sessionId}`);
   },
+
+  exportMessage: async (messageId: string, format: "docx" | "pdf" = "docx"): Promise<void> => {
+    const response = await api.get(`/chat/messages/${messageId}/export`, {
+      params: { format },
+      responseType: "blob",
+      timeout: 30_000,
+    });
+    const blob = new Blob([response.data]);
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `analisis.${format}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  },
 };
 
 export const documentApi = {

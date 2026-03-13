@@ -16,14 +16,10 @@ interface SidebarProps {
   onDeleteDocument: (id: string) => void;
 }
 
-const listVariants = {
-  hidden: {},
-  visible: { transition: { staggerChildren: 0.05 } },
-};
-
 const itemVariants = {
-  hidden: { opacity: 0, x: -20 },
-  visible: { opacity: 1, x: 0, transition: { duration: 0.3, ease: [0.22, 1, 0.36, 1] } },
+  initial: { opacity: 0, x: -12 },
+  animate: { opacity: 1, x: 0 },
+  exit: { opacity: 0, x: -12 },
 };
 
 export default function Sidebar({
@@ -78,19 +74,18 @@ export default function Sidebar({
         <p className="text-[10px] uppercase tracking-widest text-gray-600 mb-2 px-1 font-semibold">
           Riwayat Chat
         </p>
-        <motion.div
-          variants={listVariants}
-          initial="hidden"
-          animate="visible"
-          className="space-y-1"
-        >
-          <AnimatePresence>
-            {sessions.map((session) => {
+        <div className="space-y-1">
+          <AnimatePresence initial={false}>
+            {sessions.map((session, idx) => {
               const isActive = session.id === currentSessionId;
               return (
                 <motion.div
                   key={session.id}
                   variants={itemVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  transition={{ duration: 0.25, delay: idx * 0.03, ease: [0.22, 1, 0.36, 1] }}
                   layout
                   whileHover={{ x: 3 }}
                   className={`group relative flex items-center gap-1 rounded-xl transition-all duration-200
@@ -141,7 +136,7 @@ export default function Sidebar({
               Belum ada riwayat chat
             </motion.p>
           )}
-        </motion.div>
+        </div>
       </div>
 
       <div className="border-t border-gray-800 p-3 relative z-10">

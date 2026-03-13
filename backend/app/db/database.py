@@ -115,6 +115,19 @@ class Database:
             await db.commit()
         return msg_id
 
+    async def get_message_by_id(self, message_id: str) -> dict | None:
+        """Ambil satu message berdasarkan ID."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("SELECT * FROM messages WHERE id = ?", (message_id,))
+            row = await cursor.fetchone()
+            if not row:
+                return None
+            msg = dict(row)
+            msg["table"] = json.loads(msg.pop("table_data")) if msg.get("table_data") else None
+            msg["sources"] = json.loads(msg["sources"]) if msg.get("sources") else []
+            return msg
+
     async def get_messages(self, session_id: str) -> list[dict]:
         """Ambil semua messages dari session tertentu."""
         async with aiosqlite.connect(self.db_path) as db:

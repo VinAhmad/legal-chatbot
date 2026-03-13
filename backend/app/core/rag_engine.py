@@ -211,9 +211,26 @@ class RAGEngine:
             return response.json()["response"]
 
     def _parse_llm_response(self, raw_response: str) -> dict:
-        """Parse response LLM (harusnya JSON). Fallback ke plain text kalau gagal parse."""
+        """
+        Parse response LLM. Sekarang model output markdown langsung (bukan JSON).
+        Backward-compat: kalau masih ada cached response JSON lama, tetap bisa diparse.
+        """
         cleaned = raw_response.strip()
 
+        # Backward compat: coba parse JSON lama kalau model masih output JSON
+        json_result = self._try_parse_json_legacy(cleaned)
+        if json_result:
+            return json_result
+
+        return {
+            "summary": cleaned,
+            "table": None,
+            "sources": [],
+        }
+
+    def _try_parse_json_legacy(self, text: str) -> dict | None:
+        """Backward compat: parse response JSON lama (dari cache atau model yang masih output JSON)."""
+        cleaned = text.strip()
         if cleaned.startswith("```json"):
             cleaned = cleaned[7:]
         if cleaned.startswith("```"):
@@ -222,20 +239,20 @@ class RAGEngine:
             cleaned = cleaned[:-3]
         cleaned = cleaned.strip()
 
+        if not cleaned.startswith("{"):
+            return None
+
         try:
-            parsed = json.loads(cleaned)
-            return {
-                "summary": parsed.get("summary", cleaned),
-                "table": parsed.get("table"),
-                "sources": [],
-            }
-        except json.JSONDecodeError:
-            logger.warning("LLM response bukan valid JSON, pakai sebagai plain text")
-            return {
-                "summary": raw_response.strip(),
-                "table": None,
-                "sources": [],
-            }
+            data = json.loads(cleaned)
+            if isinstance(data, dict) and "summary" in data:
+                return {
+                    "summary": data.get("summary", ""),
+                    "table": data.get("table"),
+                    "sources": [],
+                }
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return None
 
     def _ensure_initialized(self):
         if not self._initialized:
